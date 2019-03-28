@@ -5,15 +5,38 @@ __lua__
 --ideen:
 -- als de bal een object raakt licht die even op
 -- aan het begin van het spel wordt de court als animatie getekent.
-gravity=0.1
+local gravity=0.1
+local score=0
+local mode = 'GAME'
 
-court = {
-  {x1=3, y1=3, x2=3, y2=124},
-  {x1= 124, y1=3, x2=124, y2=124},
-  {x1=3, y1=3, x2=124, y2=3},
+local court = {
+  is_colliding=false,
+  collision_counter=0,
+  color=11,
+  colliding_color=8,
+  lines = {
+    {x1=3, y1=3, x2=3, y2=124},
+    {x1= 124, y1=3, x2=124, y2=124},
+    {x1=3, y1=3, x2=124, y2=3},
+  },
+  update= function(self)
+    if self.is_colliding then
+      self.collision_counter=5
+      self.is_colliding=false
+    elseif self.collision_counter>0 then
+      self.collision_counter-=1
+    end
+  end,
+
+  draw = function(self)
+    local color = ((self.collision_counter>0) and self.colliding_color or self.color)
+    for l in all(self.lines) do
+      line(l.x1, l.y1, l.x2, l.y2, color)
+    end
+  end
 }
 
-pad = {
+local pad = {
   x=52,
   y=122,
   w=30,
@@ -21,11 +44,32 @@ pad = {
   velocity=0,
   friction=0.6,
   acceleration=1,
-  max_velocity=5
+  max_velocity=5,
+
+  update = function (self)
+    self.velocity = reduce(self.velocity, self.friction)
+  	if btn(0) and self.x > 3 then 	self.velocity-=self.acceleration end
+  	if btn(1) and self.x < 127-(self.w+3) then self.velocity+=self.acceleration end
+    self.x = mid(0, self.x+self.velocity, 127-self.w)
+  end,
+
+  draw = function (self)
+    spr(1, self.x, self.y)
+    spr(1, self.x+(self.w-8), self.y, 1,1, true, false)
+    if(self.w > 16) then
+      for l,c in pairs({[0]=7,[1]=13,[2]=13,[3]=13,[4]=5, [5]=6}) do
+        printh(""..l)
+        line(self.x+8, self.y+l, self.x+(self.w-8), self.y+l, c)
+      end
+    end
+  end
 }
 
+local ball
+
+
 function init_ball()
-  return {
+  ball = {
     x=52,
     y=20,
     velocity_x=0,
@@ -33,6 +77,7 @@ function init_ball()
     h=7,
     w=7,
     colliding=false,
+
     collide_pad = function(self)
       if overlap(self,pad) then
         if not self.colliding then sfx(1) end
@@ -44,77 +89,93 @@ function init_ball()
         self.colliding=false
       end
     end,
-    collide_court=function(self)
+
+    collide_court = function(self)
       if self.y<=3 then
         self.velocity_y= -self.velocity_y
         self.y=4
+        self.handle_collision()
       end
       if self.x<=3 then
         self.velocity_x = -self.velocity_x
         self.x=4
+        self.handle_collision()
       end
       if self.x>=(124-self.w) then
         self.velocity_x= -self.velocity_x
         self.x=123-self.w
+        self.handle_collision()
       end
+    end,
+
+    handle_collision= function(self)
+      court.is_colliding=true
+      score+=1
+    end,
+
+    update = function (self)
+      self:collide_court()
+      self:collide_pad()
+      self.velocity_y = self.velocity_y+gravity
+      self.y+=self.velocity_y
+      self.x+=self.velocity_x
+      -- dead?
+      if self.y > 127 then init_ball() end
     end
   }
 end
 
-ball=init_ball()
 
-
-function update_paddle()
-  pad.velocity = reduce(pad.velocity, pad.friction)
-	if btn(0) and pad.x > 3 then 	pad.velocity-=pad.acceleration end
-	if btn(1) and pad.x < 127-(pad.w+3) then pad.velocity+=pad.acceleration end
-
-  pad.x = mid(0, pad.x+pad.velocity, 127-pad.w)
-end
-
-
-
-function update_ball (args)
-  ball.velocity_y = ball.velocity_y+gravity
-  ball.y+=ball.velocity_y
-  ball.x+=ball.velocity_x
-  if ball.y > 127 then ball=init_ball() end
+function _init()
+  init_ball()
 end
 
 function _update60()
-	update_paddle()
-  update_ball()
-  ball:collide_pad()
-  ball:collide_court()
+	 if mode == 'START' then
+     update_start()
+   elseif mode == 'GAME' then
+     update_game()
+   elseif model == 'END' then
+     update_end()
+   end
+
+end
+
+function update_start()end
+function update_end()end
+
+function update_game()
+  pad:update()
+  ball:update()
+  court:update()
 end
 
 
 function _draw()
+
+
+  if mode == 'START' then
+    draw_start()
+  elseif mode == 'GAME' then
+    draw_game()
+  elseif model == 'END' then
+    draw_end()
+  end
+end
+
+function draw_start()end
+function draw_game()
   cls()
-  draw_lines(court,11)
-  draw_paddle()
+  pad:draw()
   draw_ball()
-  print("velocity_y:"..ball.velocity_y, 3,3)
+  court:draw()
+  print("score:"..score, 0,0, 7)
 end
+function draw_end()end
 
-function draw_lines(lines, color)
-  printh("test")
-  for l in all(lines) do
-    printh("line:")
-    line(l.x1, l.y1, l.x2, l.y2, color)
-  end
-end
 
-function draw_paddle()
-  spr(1, pad.x, pad.y)
-  spr(1, pad.x+(pad.w-8), pad.y, 1,1, true, false)
-  if(pad.w > 16) then
-    for l,c in pairs({[0]=7,[1]=13,[2]=13,[3]=13,[4]=5, [5]=6}) do
-      printh(""..l)
-      line(pad.x+8, pad.y+l, pad.x+(pad.w-8), pad.y+l, c)
-    end
-  end
-end
+
+
 
 function draw_ball()
   spr(2, ball.x, ball.y)
