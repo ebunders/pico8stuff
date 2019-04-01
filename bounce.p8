@@ -7,7 +7,9 @@ __lua__
 -- aan het begin van het spel wordt de court als animatie getekent.
 local gravity=0.1
 local score=0
-local mode = 'GAME'
+local mode='START'
+local play_mode = ''
+local lives=3
 
 local court = {
   is_colliding=false,
@@ -15,9 +17,9 @@ local court = {
   color=11,
   colliding_color=8,
   lines = {
-    {x1=3, y1=3, x2=3, y2=124},
-    {x1= 124, y1=3, x2=124, y2=124},
-    {x1=3, y1=3, x2=124, y2=3},
+    {x1=3, y1=8, x2=3, y2=114},
+    {x1= 124, y1=8, x2=124, y2=114},
+    {x1=3, y1=8, x2=124, y2=8},
   },
   update= function(self)
     if self.is_colliding then
@@ -47,6 +49,7 @@ local pad = {
   max_velocity=5,
 
   update = function (self)
+
     self.velocity = reduce(self.velocity, self.friction)
   	if btn(0) and self.x > 3 then 	self.velocity-=self.acceleration end
   	if btn(1) and self.x < 127-(self.w+3) then self.velocity+=self.acceleration end
@@ -90,10 +93,11 @@ function init_ball()
       end
     end,
 
+	-- ball hits the court
     collide_court = function(self)
-      if self.y<=3 then
+      if self.y<=8 then
         self.velocity_y= -self.velocity_y
-        self.y=4
+        self.y=8
         self.handle_collision()
       end
       if self.x<=3 then
@@ -114,14 +118,39 @@ function init_ball()
     end,
 
     update = function (self)
-      self:collide_court()
-      self:collide_pad()
-      self.velocity_y = self.velocity_y+gravity
-      self.y+=self.velocity_y
-      self.x+=self.velocity_x
-      -- dead?
-      if self.y > 127 then init_ball() end
-    end
+    	if play_mode == 'NEW_BALL' then
+    		-- start new ball
+    		if btn(5) then play_mode='' end
+    	else
+    		--move the ball
+	      self:collide_court()
+	      self:collide_pad()
+
+	      -- update the pad velocity and position
+	      self.velocity_y = self.velocity_y+gravity
+	      self.y+=self.velocity_y
+	      self.x+=self.velocity_x
+	      
+	      -- is the ball lost?
+			  if self.y > 127 then
+		      init_ball() 
+		      lives-=1
+		      if lives>0 then
+		       	play_mode="NEW_BALL"
+		      else
+		       	mode="END"
+					end
+	    	end
+    	end
+	  end,
+
+	  draw= function(self)
+	  	if play_mode == "NEW_BALL" then
+			  print ("press (x) for new ball", 20, 30)
+			else
+				spr(2, ball.x, ball.y)
+			end
+		end
   }
 end
 
@@ -130,19 +159,31 @@ function _init()
   init_ball()
 end
 
+-- ################################
+-- ##   UPDATE 
+-- ################################
 function _update60()
-	 if mode == 'START' then
+	 if mode == "START" then
      update_start()
-   elseif mode == 'GAME' then
+   elseif mode == "GAME" then
      update_game()
-   elseif model == 'END' then
+   elseif mode == "END" then
      update_end()
    end
 
 end
 
-function update_start()end
-function update_end()end
+function update_start()
+	if btn(5)then mode = "GAME" end
+end
+
+function update_end()
+	if btn(5) then 
+		mode="GAME"
+		score=0
+		lives=3 
+	end
+end
 
 function update_game()
   pad:update()
@@ -151,43 +192,59 @@ function update_game()
 end
 
 
-function _draw()
 
+-- ################################
+-- ##   DRAW
+-- ################################
+function _draw()
 
   if mode == 'START' then
     draw_start()
   elseif mode == 'GAME' then
     draw_game()
-  elseif model == 'END' then
+  elseif mode == 'END' then
     draw_end()
   end
 end
 
-function draw_start()end
+function draw_start()
+	cls()
+	print ("___speedball````", 30, 10 )
+  print ("press (x) to start", 30, 70)
+end
+
 function draw_game()
   cls()
   pad:draw()
-  draw_ball()
+  ball:draw()
   court:draw()
   print("score:"..score, 0,0, 7)
-end
-function draw_end()end
+  for i = 1, lives do
+  	spr(2, 50 + (12*i), 0)
+	end	
 
-
-
-
-
-function draw_ball()
-  spr(2, ball.x, ball.y)
 end
 
--- Globale functies
+function draw_end()
+	cls()
+	print ("GAME OVER", 30,10)
+	print ("your score: "..score, 30,30)
+  print ("press (x) to play again",30,70)
+end
+
+
+
+
+
+
+
+-- globale functies
 function overlap(e1, e2)
   return e1.x+e1.w >= e2.x and e1.x <= e2.x+e2.w and e1.y+e1.h >= e2.y and e1.y <= e2.y+e2.h
 end
 
--- Vergroot (negatief) of verklein (positief) de waarde van `val` met `amt` richting 0.
---  Als het resultaat minder is dan `amt`vindt afronding naar 0 plaats
+-- vergroot (negatief) of verklein (positief) de waarde van `val` met `amt` richting 0.
+--  als het resultaat minder is dan `amt`vindt afronding naar 0 plaats
 function reduce(val, amt)
   if val < -amt then
     return val + amt
@@ -212,5 +269,5 @@ __gfx__
 00000000000000000044400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 000d00001a0201d020210202d02032020320203200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000500002103003000000000000000000000000000000000000001100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000200002b3102d310313100000000000000000000000000000001100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00110000350102a0201f0301a04011050000000000000000000000000000000000001c00000000000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000
