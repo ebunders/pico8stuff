@@ -6,18 +6,34 @@ __lua__
 -- als de bal een object raakt licht die even op
 -- aan het begin van het spel wordt de court als animatie getekent.
 local gravity=0.06
-local score=0
-local score_counter=0
-local score_delay_counter_max=5
-local score_delay_counter=score_delay_counter_max
+local score={}
 local mode='start'
 local play_mode = ''
 local lives=3
 local max_velocity=4
+local timers={}
 
 function init_score()
-  score=0;
-  score_counter=0
+  score = {
+    score=0,
+    score_counter=0,
+    score_delay_counter_max=5,
+    score_delay_counter=5,
+    update=function(self)
+      if self.score_delay_counter>0 then
+        self.score_delay_counter-=1
+      else
+        self.score_delay_counter=self.score_delay_counter_max
+        if self.score_counter<self.score then self.score_counter+=1; sfx(3) end
+      end
+    end,
+    draw=function(self)
+      print("score:"..score.score_counter, 0,0, 7)
+    end,
+    counting=function(self)
+      return self.score_counter<self.score
+    end
+  }
 end
 
 local court = {
@@ -89,6 +105,8 @@ function init_ball()
     w=7,
     colliding=false,
     collisioin_color=0,
+    trail={},
+    afterglow=5,
 
     calculate_velocity=function(self)
         return ((abs(self.velocity_x) + abs(self.velocity_y))/2)-0.1
@@ -129,7 +147,7 @@ function init_ball()
       court.is_colliding=true
       local v=self:calculate_velocity()
       court.collision_color=velocity_level(v,12,8,10)
-      score+=flr(v)
+      score.score+=flr(v)
     end,
 
     update = function(self)
@@ -158,6 +176,28 @@ function init_ball()
             sfx(4)
 					end
 	    	end
+
+        --trails: generation
+        local amount = self:calculate_velocity() < 2 and 0 or self:calculate_velocity() * 4
+        for i = 0,amount do
+          if i>0 then
+            local seed = flr(rnd(64))
+            add(self.trail, {
+              age=0,
+              x=self.x+flr(seed/8),
+              y=self.y+(seed%8)
+            })
+          end
+        end
+
+
+        -- trails: entropy
+        for point in all(self.trail)do
+          point.age+=1
+          if(flr(rnd(5))==1 or point.age>20)then
+            del(self.trail, point)
+          end
+        end
     	end
 	  end,
 
@@ -165,9 +205,13 @@ function init_ball()
 	  	if play_mode == "new_ball" then
 			  print ("press (x) for new ball", 20, 30)
 			else
-        local vel = self:calculate_velocity()
-        local spr_nr=velocity_level(vel,2,3,4)
-        printh("vel:"..vel..", srp_nr:"..spr_nr)
+        -- draw the trail
+        for point in all(self.trail)do
+          local color = point.age<5 and 7 or point.age<14 and 9 or 8
+          pset(point.x, point.y, color)
+        end
+        -- draw the ball
+        local spr_nr=velocity_level(self:calculate_velocity(),2,3,4)
 				spr(spr_nr, ball.x, ball.y)
 			end
 		end
@@ -177,6 +221,7 @@ end
 
 function _init()
   init_ball()
+  init_score()
 end
 
 -- ################################
@@ -192,17 +237,12 @@ function _update60()
   end
 end
 
-function update_score_counter()
-  if score_delay_counter>0 then
-    score_delay_counter-=1
-  else
-    score_delay_counter=score_delay_counter_max
-    if score_counter<score then score_counter+=1; sfx(3) end
-  end
-end
+
 
 function update_start()
 	if btn(5)then
+    init_score()
+    lives=3
     mode = "game"
     sfx(0)
   end
@@ -212,14 +252,13 @@ function update_game()
   pad:update()
   ball:update()
   court:update()
-  update_score_counter()
+  score:update()
 end
 
 function update_end()
+  score:update()
 	if btn(5) then
-		mode="game"
-		init_score()
-		lives=3
+		mode="start"
 	end
 end
 
@@ -249,7 +288,7 @@ function draw_game()
   ball:draw()
   court:draw()
   draw_velocity()
-  print("score:"..score_counter, 0,0, 7)
+  score:draw()
   for i = 1, lives do
   	spr(2, 85 + (10*i), 0)
 	end
@@ -272,9 +311,11 @@ end
 
 function draw_end()
 	cls()
-	print ("game over", 30,10)
-	print ("your score: "..score, 30,30)
-  print ("press (x) to play again",30,70)
+  if(not score:counting())then
+  	print ("game over", 30,10)
+  	print ("your score: "..score.score, 30,30)
+    print ("press (x) to play again",30,70)
+  end
 end
 
 
@@ -288,6 +329,24 @@ function overlap(e1, e2)
   return e1.x+e1.w >= e2.x and e1.x <= e2.x+e2.w and e1.y+e1.h >= e2.y and e1.y <= e2.y+e2.h
 end
 
+-- add a timer
+function add_timer(ticks, fn)
+  local timer = {
+    counter=0,
+    ticks=ticks,
+    after=fn
+  }
+  add(timers, timer)
+  return timer
+end
+
+function update_timers()
+  for timer in all(timers)do
+    timer.counter+=1
+    if(timer.counter==timer.ticks)then timer.after() end
+    del(timers, timer)
+  end
+end
 -- function createentity(x,y,w,h conf)
 -- local entiry = {
 --
